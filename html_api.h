@@ -33,7 +33,7 @@ void html_api(){
       if (server.argName(i) == "channel_name") channel_name = urldecode(server.arg(i));
 
       if (server.argName(i) == "ssid") config.ssid                           = urldecode(server.arg(i));
-      if (server.argName(i) == "password") config.password                   = urldecode(server.arg(i));
+//      if (server.argName(i) == "password") config.password                   = urldecode(server.arg(i));
 
       if (server.argName(i) == "mqtt_broker_port") config.mqtt_broker_port            = urldecode(server.arg(i));
       if (server.argName(i) == "mqtt_broker_client_id") config.mqtt_broker_client_id  = urldecode(server.arg(i));
@@ -136,7 +136,7 @@ void html_api(){
       }else if (cmd == "get config"){
          String values ="";
          values += "ssid=" + config.ssid + "\n";
-         values += "password=" + config.password + "\n";
+         values += "password=DUMMY\n";
          if (config.dhcp) {values += "checkbox=dhcp=1\n";}else{values += "checkbox=dhcp=0\n";}
          values += "ip_0=" + (String) config.ip[0] + "\n";
          values += "ip_1=" + (String) config.ip[1] + "\n";
