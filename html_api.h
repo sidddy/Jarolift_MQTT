@@ -33,7 +33,7 @@ void html_api(){
       if (server.argName(i) == "channel_name") channel_name = urldecode(server.arg(i));
 
       if (server.argName(i) == "ssid") config.ssid                           = urldecode(server.arg(i));
-//      if (server.argName(i) == "password") config.password                   = urldecode(server.arg(i));
+      if ((server.argName(i) == "password") && (urldecode(server.arg(i)) != "DUMMY")) config.password = urldecode(server.arg(i));
 
       if (server.argName(i) == "mqtt_broker_port") config.mqtt_broker_port            = urldecode(server.arg(i));
       if (server.argName(i) == "mqtt_broker_client_id") config.mqtt_broker_client_id  = urldecode(server.arg(i));
