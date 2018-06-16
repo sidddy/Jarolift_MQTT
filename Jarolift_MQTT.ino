@@ -124,6 +124,9 @@ char serialnr[4] = {0};
 char sn[4] = {0};
 int steadycnt = 0;
 
+// Shutter Closed State
+int closed_state[16] = {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1};
+
 
 DoubleResetDetector drd(DRD_TIMEOUT, DRD_ADDRESS);
 
@@ -734,6 +737,12 @@ void mqtt_callback(char* topic, byte* payload, unsigned int length) {
       cmd_shade(channel);
     } else if (cmd == "LEARN") {
       cmd_learn(channel);
+    } else if (cmd == "GO") {
+      if (closed_state[channel] == 0) {
+          cmd_down(channel);
+      } else {
+          cmd_up(channel);
+      }
     } else {
       WriteLog("[ERR ] - incoming MQTT topic message unknown.", true);
     }
@@ -763,8 +772,11 @@ void devcnt_handler(boolean do_increment = true) {
 // send status via mqtt
 //####################################################################
 void mqtt_send_percent_closed_state(int channelNum, int percent, String command) {
+  if ((channelNum < 0) || (channelNum > 15))
+      return;
   if (percent>100) percent = 100;
   if (percent<0) percent = 0;
+  closed_state[channelNum] = percent;
   if (mqtt_client.connected()) {
     char percentstr[4];
     itoa(percent, percentstr, 10);
