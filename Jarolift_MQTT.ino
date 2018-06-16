@@ -737,6 +737,12 @@ void mqtt_callback(char* topic, byte* payload, unsigned int length) {
       cmd_shade(channel);
     } else if (cmd == "LEARN") {
       cmd_learn(channel);
+    } else if (cmd == "GO") {
+      if (closed_state[channel] == 0) {
+          cmd_down(channel);
+      } else {
+          cmd_up(channel);
+      }
     } else {
       WriteLog("[ERR ] - incoming MQTT topic message unknown.", true);
     }
