@@ -725,19 +725,19 @@ void mqtt_callback(char* topic, byte* payload, unsigned int length) {
     detachInterrupt(DATAIN); // Interrupt @Inputpin
     delay(1);
 
-    if (cmd == "UP" || cmd == "0") {
+    if (cmd.equalsIgnoreCase("UP") || cmd == "0") {
       cmd_up(channel);
-    } else if (cmd == "DOWN"  || cmd == "100") {
+    } else if (cmd.equalsIgnoreCase("DOWN")  || cmd == "100") {
       cmd_down(channel);
-    } else if (cmd == "STOP") {
+    } else if (cmd.equalsIgnoreCase("STOP")) {
       cmd_stop(channel);
-    } else if (cmd == "SETSHADE") {
+    } else if (cmd.equalsIgnoreCase("SETSHADE")) {
       cmd_set_shade_position(channel);
-    } else if (cmd == "SHADE" || cmd == "90") {
+    } else if (cmd.equalsIgnoreCase("SHADE") || cmd == "90") {
       cmd_shade(channel);
-    } else if (cmd == "LEARN") {
+    } else if (cmd.equalsIgnoreCase("LEARN")) {
       cmd_learn(channel);
-    } else if (cmd == "GO") {
+    } else if (cmd.equalsIgnoreCase("GO")) {
       if (closed_state[channel] == 0) {
           cmd_down(channel);
       } else {
