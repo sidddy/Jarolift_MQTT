@@ -285,7 +285,7 @@ String getContentType(String filename) {
 // send the right file to the client (if it exists)
 //####################################################################
 bool handleFileRead(String path) {
-  Serial.println("handleFileRead: " + path);
+  if (debug_webui) Serial.println("handleFileRead: " + path);
   if (path.endsWith("/")) path += "index.html";         // If a folder is requested, send the index file
   String contentType = getContentType(path);            // Get the MIME type
   if (SPIFFS.exists(path)) {                            // If the file exists
@@ -294,7 +294,7 @@ bool handleFileRead(String path) {
     file.close();                                       // Then close the file again
     return true;
   }
-  Serial.println("\tFile Not Found");
+  if (debug_webui) Serial.println("\tFile Not Found");
   return false;                                         // If the file doesn't exist, return false
 } // bool handleFileRead
 
@@ -706,17 +706,41 @@ void entertx() {
 //####################################################################
 void mqtt_callback(char* topic, byte* payload, unsigned int length) {
 
+  if (debug_mqtt) {
+    Serial.printf("mqtt in: %s - ",topic);
+    for (int i = 0; i < length; i++) {
+      Serial.print((char)payload[i]);
+    }
+    Serial.println();
+  }
+
   // extract channel id from topic name
-  int channel;
-  char * token = strtok(topic, "/");
-  for (; (token = strtok(NULL, "/")) != NULL; channel = atoi(token));
+  int channel = 999;
+  char command[10];
+  char * token = strtok(topic, "/");  // initialize token
+  token = strtok(NULL, "/");          // now token = 2nd token
+  token = strtok(NULL, "/");          // now token = 3rd token, "shutter" or so
+  if (debug_mqtt) Serial.printf("command token: %s\n",token);
+  if (strncmp(token,"shutter",7) == 0) {
+    token = strtok(NULL, "/");
+    if (token != NULL) {
+       channel = atoi(token);
+    }
+  } else if (strncmp(token,"sendconfig",10) == 0) {
+    WriteLog("[INFO] - incoming MQTT command: sendconfig",true);
+    mqtt_send_config();
+    return;
+  } else {
+    WriteLog("[ERR ] - incoming MQTT command unknown: " + (String) topic, true);
+    return;
+  }
 
   // convert payload in string
   payload[length] = '\0';
   String cmd = String((char*)payload);
 
   // print serial message
-  WriteLog("[INFO] - incoming MQTT command for channel " + (String) channel + ":", false);
+  WriteLog("[INFO] - incoming MQTT command: channel " + (String) channel + ":", false);
   WriteLog(cmd, true);
 
   if (channel <= 15) {
@@ -744,10 +768,10 @@ void mqtt_callback(char* topic, byte* payload, unsigned int length) {
           cmd_up(channel);
       }
     } else {
-      WriteLog("[ERR ] - incoming MQTT topic message unknown.", true);
+      WriteLog("[ERR ] - incoming MQTT payload unknown.", true);
     }
   } else {
-    WriteLog("[ERR ] - channel does not exist, choose one of 0-15", true);
+    WriteLog("[ERR ] - invalid channel, choose one of 0-15", true);
   }
 } // void mqtt_callback
 
@@ -786,6 +810,66 @@ void mqtt_send_percent_closed_state(int channelNum, int percent, String command)
   }
   WriteLog("[INFO] - command "+ command+ " for channel "+ (String)channelNum+ " ("+ config.channel_name[channelNum]+ ") sent.", true);
 } // void mqtt_send_percent_closed_state
+
+//####################################################################
+// send config via mqtt
+//####################################################################
+void mqtt_send_config() {
+  String Payload;
+  int channelNum, configCnt = 0, lineCnt = 0;
+  char numBuffer[25];
+
+  if (mqtt_client.connected()) {
+
+    // send config of the shutter channels
+    for (int channelNum = 0; channelNum <= 15; channelNum++) {
+      if (config.channel_name[channelNum] != "") {
+        if (lineCnt == 0) {
+          Payload = "{\"channel\":[";
+        } else {
+          Payload += ", ";
+        }
+        EEPROM.get(adresses[channelNum], new_serial);
+        sprintf(numBuffer, "0x%08x", new_serial);
+        Payload += "{\"id\":" + String(channelNum) + ", \"name\":\"" + config.channel_name[channelNum] + "\", "
+                 + "\"serial\":\"" + numBuffer +  "\"}";
+        lineCnt++;
+
+        if (lineCnt >= 4) {
+          Payload += "]}";
+          mqtt_send_config_line(configCnt, Payload);
+          lineCnt = 0;
+        }
+      } // if (config.channel_name[channelNum] != "")
+    } // for
+
+    // handle last item
+    if (lineCnt > 0) {
+      Payload += "]}";
+      mqtt_send_config_line(configCnt, Payload);
+    }
+
+    // send most important other config info
+    snprintf(numBuffer, 15, "%d", devcnt);
+    Payload = "{\"serialprefix\":\"" + config.serial + "\", "
+            + "\"mqtt-clientid\":\"" + config.mqtt_broker_client_id + "\", "
+            + "\"mqtt-devicetopic\":\"" + config.mqtt_devicetopic + "\", "
+            + "\"devicecounter\":" + (String)numBuffer + ", "
+            + "\"new_learn_mode\":" + (String)config.learn_mode + "}";
+    mqtt_send_config_line(configCnt, Payload);
+  } // if (mqtt_client.connected())
+} // void mqtt_send_config
+
+//####################################################################
+// send one config telegram via mqtt
+//####################################################################
+void mqtt_send_config_line(int & counter, String Payload) {
+  String Topic = "stat/"+ config.mqtt_devicetopic+ "/config/" + (String)counter;
+  if (debug_mqtt) Serial.println("mqtt send: " + Topic + " - " + Payload);
+  mqtt_client.publish(Topic.c_str(), Payload.c_str());
+  counter++;
+  yield();
+} // void mqtt_send_config_line
 
 //####################################################################
 // function to move the shutter up
@@ -1044,7 +1128,7 @@ boolean mqtt_connect() {
   uint8_t willQos = 0;
   boolean willRetain = true;
   const char* willMessage = "Offline";           // LWT message says "Offline"
-  String subscribeString = "cmd/"+ config.mqtt_devicetopic+ "/shutter/+";
+  String subscribeString = "cmd/"+ config.mqtt_devicetopic+ "/#";
 
   WriteLog("[INFO] - trying to connect to MQTT broker . . .", false);
   // try to connect to MQTT
