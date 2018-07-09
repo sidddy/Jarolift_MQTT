@@ -48,6 +48,9 @@
 #include <PubSubClient.h>
 #include <Ticker.h>
 #include <DoubleResetDetector.h>
+#include <time.h>
+#include <simpleDSTadjust.h>
+#include <coredecls.h>              // settimeofday_cb()
 
 #include "helpers.h"
 #include "global.h"
@@ -119,10 +122,8 @@ volatile unsigned int hibuf[pufsize];     // ring buffer storing HIGH pulse leng
 volatile bool iset = false;
 volatile byte value = 0;                  // Stores RSSI Value
 long rx_time;
-bool lcl_group = false;
-char serialnr[4] = {0};
-char sn[4] = {0};
 int steadycnt = 0;
+boolean time_is_set_first = true;
 
 // Shutter Closed State
 int closed_state[16] = {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1};
@@ -184,6 +185,8 @@ void setup()
   InitLog();
   EEPROM.begin(4096);
   Serial.begin(115200);
+  settimeofday_cb(time_is_set);
+  updateNTP(); // Init the NTP time
   WriteLog("[INFO] - starting Jarolift Dongle "+ (String)PROGRAM_VERSION, true);
   WriteLog("[INFO] - ESP-ID "+ (String)ESP.getChipId()+ " // ESP-Core  "+ ESP.getCoreVersion()+ " // SDK Version "+ ESP.getSdkVersion(), true);
 
@@ -731,7 +734,7 @@ void mqtt_callback(char* topic, byte* payload, unsigned int length) {
     mqtt_send_config();
     return;
   } else {
-    WriteLog("[ERR ] - incoming MQTT command unknown: " + (String) topic, true);
+    WriteLog("[ERR ] - incoming MQTT command unknown: " + (String)token, true);
     return;
   }
 
@@ -1130,16 +1133,34 @@ boolean mqtt_connect() {
   const char* willMessage = "Offline";           // LWT message says "Offline"
   String subscribeString = "cmd/"+ config.mqtt_devicetopic+ "/#";
 
-  WriteLog("[INFO] - trying to connect to MQTT broker . . .", false);
+  WriteLog("[INFO] - trying to connect to MQTT broker", true);
   // try to connect to MQTT
   if (mqtt_client.connect(client_id, username, password, willTopic.c_str(), willQos, willRetain, willMessage )) {
-    WriteLog("success!", true);
+    WriteLog("[INFO] - MQTT connect success", true);
     // subscribe the needed topics
     mqtt_client.subscribe(subscribeString.c_str());
     // publish telemetry message "we are online now"
     mqtt_client.publish(willTopic.c_str(), "Online", true);
   } else {
-    WriteLog("failed, rc ="+ (String)mqtt_client.state(), true);
+    WriteLog("[ERR ] - MQTT connect failed, rc ="+ (String)mqtt_client.state(), true);
   }
   return mqtt_client.connected();
 } // boolean mqtt_connect
+
+//####################################################################
+// NTP update
+//####################################################################
+void updateNTP() {
+  configTime(TIMEZONE * 3600, 0, NTP_SERVERS);
+} // updateNTP
+
+//####################################################################
+// callback function when time is set via SNTP
+//####################################################################
+void time_is_set(void) {
+  if (time_is_set_first) {    // call WriteLog only once for the initial time set
+    time_is_set_first = false;
+    WriteLog("[INFO] - time set from NTP server", true);
+  }
+  Serial.println("--- settimeofday() was called ---");
+}

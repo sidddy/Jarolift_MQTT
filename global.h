@@ -18,12 +18,18 @@
 #ifndef GLOBAL_H
 #define GLOBAL_H
 
-#define PROGRAM_VERSION "v0.6"
+#define PROGRAM_VERSION "v0.7"
 
 #define ACCESS_POINT_NAME      "Jarolift-Dongle"  // default SSID for Admin-Mode
 #define ACCESS_POINT_PASSWORD  "12345678"         // default WLAN password for Admin-Mode
 #define AdminTimeOut           180                // Defines the time in seconds, when the Admin-Mode will be disabled
 #define MQTT_Reconnect_Interval 30000             // try connect to MQTT server very X milliseconds
+#define NTP_SERVERS            "0.pool.ntp.org", "1.pool.ntp.org", "2.pool.ntp.org" // List of up to 3 NTP servers
+#define TIMEZONE               +1                 // difference localtime to UTC/GMT in hours
+
+struct dstRule StartRule = {"CEST", Last, Sun, Mar, 2, 3600}; // Daylight time
+struct dstRule EndRule = {"CET", Last, Sun, Oct, 2, 0};       // Standard time
+simpleDSTadjust dstAdjusted(StartRule, EndRule);  // Setup simpleDSTadjust Library rules
 
 ESP8266WebServer server(80);                      // The Webserver
 WiFiClient espClient;
@@ -44,9 +50,10 @@ String web_cmd = "";                              // trigger to run a command wh
 int web_cmd_channel;                              // keeps the respective channel ID for the web_cmd
 
 #define NUM_WEB_LOG_MESSAGES 42                   // number of messages in the web-UI log page
-String web_log = "";                              // used to store log information for displaying in webIF
 String web_log_message[NUM_WEB_LOG_MESSAGES];
-int web_log_message_count = 0;
+uint16_t web_log_message_nextfree = 0;
+boolean web_log_message_rotated = false;
+boolean web_log_message_newline = true;
 
 boolean debug_mqtt = true;
 boolean debug_webui = false;
@@ -96,27 +103,33 @@ void InitLog()
 //####################################################################
 void WriteLog(String msg, boolean new_line = false)
 {
-  // check if log buffer is "full"
-  if (web_log_message_count == NUM_WEB_LOG_MESSAGES) {
-    // when full then move all messages one line up
-    for ( int i = 1; i < NUM_WEB_LOG_MESSAGES;  ++i ) {
-      web_log_message[i - 1] = web_log_message[i];
-    }
-    web_log_message_count--;
-    web_log_message[web_log_message_count] = "";
-  }
+// web_log_message[] is an array of strings, used as a circular buffer
+// web_log_message_nextfree points to the next free-to-use buffer line
+// when web_log_message_nextfree becomes larger than NUM_WEB_LOG_MESSAGES,
+// it is reset to 0 and web_log_message_rotated=true
+// web_log_message_newline indicates whether we are at the beginning of a line or not
 
-  if (web_log_message[web_log_message_count] == "") {
-    long uptime = millis() / 1000;
-    web_log_message[web_log_message_count] = (String)uptime + " " + msg;
-    Serial.print((String)uptime + " " + msg);
+  if (web_log_message_newline) {
+    char *dstAbbrev;
+    time_t now = dstAdjusted.time(&dstAbbrev);
+    struct tm * timeinfo = localtime(&now);
+    char buffer[30];
+    strftime (buffer, 30, "%Y-%m-%d %T", timeinfo);
+    web_log_message[web_log_message_nextfree] = (String)buffer + " " + dstAbbrev + " " + msg;
+    Serial.print((String)buffer + " " + dstAbbrev + " " + msg);
+    web_log_message_newline = false;
   } else {
-    web_log_message[web_log_message_count] += " " + msg;
+    web_log_message[web_log_message_nextfree] += " " + msg;
     Serial.print(" " + msg);
   }
   if (new_line == true) {
-    web_log_message_count++;
+    web_log_message_nextfree++;
+    if (web_log_message_nextfree >= NUM_WEB_LOG_MESSAGES) {
+      web_log_message_nextfree = 0;
+      web_log_message_rotated = true;
+    }
     Serial.println();
+    web_log_message_newline = true;
   }
 } // void WriteLog
 
@@ -296,14 +309,13 @@ boolean ReadConfig()
 
   // check is config.serial is hexadecimal
   // if necessary, convert decimal to hexadecimal
-  Serial.println("config.serial: "+ config.serial);
   if ((config.serial[0] == '0') && (config.serial[1] == 'x')) {
-    Serial.println("config.serial is hex");
+    // config.serial is hex
     // string serial stores only highest 3 bytes,
     // add lowest byte with a shift operation for config.serial_number
     config.serial_number = strtol(config.serial.c_str(), NULL, 16) << 8;
-    Serial.printf("config.serial: %08u = 0x%08x \n", config.serial_number, config.serial_number);
   } else {
+    // config.serial is NOT hex
     config.serial_number = strtol(config.serial.c_str(), NULL, 10);
     // string serial stores only highest 3 bytes,
     // remove lowest byte with a shift operation
